@@ -13,11 +13,12 @@ import torch
 # from monodepth_ros_noetic.networks.resnet_encoder import ResnetEncoder
 # from monodepth_ros_noetic.utils import output_to_depth
 
+from cv_bridge import CvBridge
 
 
 
 import rospy
-from sensor_msgs.msg import Image
+from sensor_msgs.msg import Image, CameraInfo
 
 from cv_bridge import CvBridge
 
@@ -1037,20 +1038,31 @@ def sec_to_hm_str(t):
 
 
 
+frame = None
+encoder = None
+depth_decoder = None
+depth_pub = None
+
+bridge = CvBridge()
+
+
+def rgb_cb(image: Image):
+    global frame
+    frame = bridge.imgmsg_to_cv2(image, desired_encoding="passthrough")
+
+
+
 def monodepth():
-    rgb_pub = rospy.Publisher('/monodepth/rgb', Image, queue_size=10)
-    depth_pub = rospy.Publisher('/monodepth/depth', Image, queue_size=10)
-    cap = cv2.VideoCapture("/dev/video2")
+    global frame
+    global encoder
+    global depth_decoder
+    global depth_pub
+    # rgb_pub = rospy.Publisher('/monodepth/color/image_raw', Image, queue_size=10)
 
-    dir_prefix = "/home/leev/monodepth-ros/src/monodepth_ros_noetic/scripts/"
-
-    rospy.init_node('monodepth_node', anonymous=True)
-    rate = rospy.Rate(10) # 10hz
-    
+    dir_prefix = "/home/leev/DistDepth/"
     bridge = CvBridge()
 
     with torch.no_grad():
-
         print("Loading the pretrained network")
         encoder = ResnetEncoder(152, False)
         loaded_dict_enc = torch.load(
@@ -1076,45 +1088,71 @@ def monodepth():
         depth_decoder.to(device)
         depth_decoder.eval()
 
+    rospy.init_node('monodepth_node', anonymous=True)
+    rate = rospy.Rate(10) # 10hz
 
-        while not rospy.is_shutdown():
-            _, frame = cap.read()
+    rgb_sub = rospy.Subscriber('/usb_cam/image_raw', Image, rgb_cb, queue_size=10)
+    depth_pub = rospy.Publisher('/usb_cam/depth/image_rect_raw', Image, queue_size=10)
+    request_timer = rospy.Timer(rospy.Duration(1 / 10), timer_cb)
 
-            raw_img = np.transpose(frame[:, :, :3], (2, 0, 1))
-            input_image = torch.from_numpy(raw_img).float().to(device)
-            input_image = (input_image / 255.0).unsqueeze(0)
+    camera_info = CameraInfo()
+    camera_info.header.frame_id = 'camera_base_link'
 
-            # resize to input size
-            input_image = torch.nn.functional.interpolate(
-                input_image, (256, 256), mode="bilinear", align_corners=False
-            )
-            features = encoder(input_image)
-            outputs = depth_decoder(features)
 
-            out = outputs[("out", 0)]
-            # print(out.min())
-            # print(out.max())
-            # exit()
-            # resize to original size
-            out_resized = torch.nn.functional.interpolate(
-                out, (512, 512), mode="bilinear", align_corners=False
-            )
-            # convert disparity to depth
-            depth = output_to_depth(out_resized, 0.1, 10)
-            metric_depth = depth.cpu().numpy().squeeze()
+    while not rospy.is_shutdown():
+        rospy.spin()
+        rate.sleep()
 
-            # Please adjust vmax for visualization. 10.0 means 10 meters which is the whole prediction range.
-            normalizer = mpl.colors.Normalize(vmin=0.1, vmax=4.0)
-            mapper = cm.ScalarMappable(norm=normalizer, cmap="viridis")
-            colormapped_im = (mapper.to_rgba(metric_depth)[:, :, :3] * 255).astype(np.uint8)
 
-            rgb_msg = bridge.cv2_to_imgmsg(frame, encoding='passthrough')
-            depth_msg = bridge.cv2_to_imgmsg(colormapped_im, encoding='passthrough')
+def timer_cb(eve):
+    global frame
+    global encoder
+    global depth_decoder
+    global depth_pub
 
-            rgb_pub.publish(rgb_msg)
-            depth_pub.publish(depth_msg)
+    if frame is None:
+        return
 
-            rate.sleep()
+    raw_img = np.transpose(frame[:, :, :3], (2, 0, 1))
+    input_image = torch.from_numpy(raw_img).float().to(device)
+    input_image = (input_image / 255.0).unsqueeze(0)
+
+    # resize to input size
+    input_image = torch.nn.functional.interpolate(
+        input_image, (256, 256), mode="bilinear", align_corners=False
+    )
+    features = encoder(input_image)
+    outputs = depth_decoder(features)
+
+    out = outputs[("out", 0)]
+    # print(out.min())
+    # print(out.max())
+    # exit()
+    # resize to original size
+    out_resized = torch.nn.functional.interpolate(
+        out, (512, 512), mode="bilinear", align_corners=False
+    )
+    # convert disparity to depth
+    depth = output_to_depth(out_resized, 0.1, 10)
+    # metric_depth = depth.cpu().numpy().squeeze()
+    # metric_depth = depth.cpu()
+    metric_depth = torch.nn.functional.interpolate(depth, (frame.shape[0], frame.shape[1]), mode='bilinear', align_corners=False)
+    metric_depth = metric_depth.detach().cpu().numpy().squeeze()
+
+    print(type(metric_depth[0, 0]))
+
+    # Please adjust vmax for visualization. 10.0 means 10 meters which is the whole prediction range.
+    normalizer = mpl.colors.Normalize(vmin=0.1, vmax=4.0)
+    mapper = cm.ScalarMappable(norm=normalizer, cmap="viridis")
+    colormapped_im = (mapper.to_rgba(metric_depth)[:, :, :3] * 255).astype(np.uint8)
+
+    # rgb_msg = bridge.cv2_to_imgmsg(frame, encoding='passthrough')
+    depth_msg = bridge.cv2_to_imgmsg(metric_depth, encoding='passthrough')
+
+    depth_msg.header.stamp = rospy.Time.now()
+    # rgb_pub.publish(rgb_msg)
+    depth_pub.publish(depth_msg)
+    # camera_info_pub.publish(camera_info_pub)
 
     # while not rospy.is_shutdown():
     #     pub.publish(hello_str)

@@ -1008,7 +1008,7 @@ def output_to_depth(level, min_depth, max_depth):
     min_out = 1 / max_depth
     max_out = 1 / min_depth
     scaled_out = min_out + (max_out - min_out) * level
-    depth = 1.312 / scaled_out
+    depth = 1 / scaled_out
     return depth
 
 def readlines(filename):
@@ -1060,13 +1060,14 @@ def monodepth():
     # rgb_pub = rospy.Publisher('/monodepth/color/image_raw', Image, queue_size=10)
 
     dir_prefix = "/home/leev/DistDepth/"
+    weights_prefix = "ckpts-Large/"
     bridge = CvBridge()
 
     with torch.no_grad():
         print("Loading the pretrained network")
         encoder = ResnetEncoder(152, False)
         loaded_dict_enc = torch.load(
-            dir_prefix + "ckpts/encoder.pth",
+            dir_prefix + f"{weights_prefix}/encoder.pth",
             map_location=device,
         )
 
@@ -1080,7 +1081,7 @@ def monodepth():
         depth_decoder = DepthDecoder(num_ch_enc=encoder.num_ch_enc, scales=range(4))
 
         loaded_dict = torch.load(
-            dir_prefix + "ckpts/depth.pth",
+            dir_prefix + f"{weights_prefix}/depth.pth",
             map_location=device,
         )
         depth_decoder.load_state_dict(loaded_dict)
@@ -1125,38 +1126,21 @@ def timer_cb(eve):
     outputs = depth_decoder(features)
 
     out = outputs[("out", 0)]
-    # print(out.min())
-    # print(out.max())
-    # exit()
-    # resize to original size
+
     out_resized = torch.nn.functional.interpolate(
         out, (512, 512), mode="bilinear", align_corners=False
     )
     # convert disparity to depth
     depth = output_to_depth(out_resized, 0.1, 10)
-    # metric_depth = depth.cpu().numpy().squeeze()
-    # metric_depth = depth.cpu()
+
+    # resize to original size
     metric_depth = torch.nn.functional.interpolate(depth, (frame.shape[0], frame.shape[1]), mode='bilinear', align_corners=False)
     metric_depth = metric_depth.detach().cpu().numpy().squeeze()
 
-    print(type(metric_depth[0, 0]))
-
-    # Please adjust vmax for visualization. 10.0 means 10 meters which is the whole prediction range.
-    normalizer = mpl.colors.Normalize(vmin=0.1, vmax=4.0)
-    mapper = cm.ScalarMappable(norm=normalizer, cmap="viridis")
-    colormapped_im = (mapper.to_rgba(metric_depth)[:, :, :3] * 255).astype(np.uint8)
-
-    # rgb_msg = bridge.cv2_to_imgmsg(frame, encoding='passthrough')
     depth_msg = bridge.cv2_to_imgmsg(metric_depth, encoding='passthrough')
 
     depth_msg.header.stamp = rospy.Time.now()
-    # rgb_pub.publish(rgb_msg)
     depth_pub.publish(depth_msg)
-    # camera_info_pub.publish(camera_info_pub)
-
-    # while not rospy.is_shutdown():
-    #     pub.publish(hello_str)
-    #     rate.sleep()
 
 if __name__ == '__main__':
     try:

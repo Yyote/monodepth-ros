@@ -1,0 +1,29 @@
+{
+  "configurations": [
+    {
+      "browse": {
+        "databaseFilename": "${default}",
+        "limitSymbolsToIncludedHeaders": false
+      },
+      "includePath": [
+        "/home/leev/drone_algo_ws/devel/include/**",
+        "/opt/ros/noetic/include/**",
+        "/home/leev/drone_algo_ws/src/packageInDev/opencv_projects/colored_object_detector/include/**",
+        "/home/leev/drone_algo_ws/src/cpp_libs/custom_ros_utils/include/**",
+        "/home/leev/drone_algo_ws/src/cpp_libs/custom_timers_ros/include/**",
+        "/home/leev/drone_algo_ws/src/cpp_libs/marker_hadler/include/**",
+        "/home/leev/drone_algo_ws/src/packageInDev/rf2o_laser_odometry/include/**",
+        "/home/leev/drone_algo_ws/src/packageInDev/planners/room_crawler/include/**",
+        "/home/leev/drone_algo_ws/src/packageInDev/planners/snake_planner/include/**",
+        "/home/leev/drone_algo_ws/src/test_pkgs/libtest/test_lib/include/**",
+        "/usr/include/**"
+      ],
+      "name": "ROS",
+      "intelliSenseMode": "gcc-x64",
+      "compilerPath": "/usr/bin/gcc",
+      "cStandard": "gnu11",
+      "cppStandard": "c++14"
+    }
+  ],
+  "version": 4
+}

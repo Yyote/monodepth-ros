@@ -210,6 +210,7 @@ install(DIRECTORY scripts/
 catkin_install_python(
 PROGRAMS
 scripts/monodepth_node.py
+scripts/trajectory_viz.py
 DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 
